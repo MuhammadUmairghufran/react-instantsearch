@@ -177,7 +177,8 @@ export default function createInstantSearchManager({
 
     if (!isDerivedHelpersEmpty) {
       const { indexId = indexName } =
-        derivedHelpers.find(
+        find(
+          derivedHelpers,
           ({ derivedHelper }) => derivedHelper.lastResults === content
         ) || {};
 
