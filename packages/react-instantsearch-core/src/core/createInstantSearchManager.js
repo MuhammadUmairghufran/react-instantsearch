@@ -32,6 +32,10 @@ export default function createInstantSearchManager({
   helper.on('error', handleSearchError);
   helper.on('search', handleNewSearch);
 
+  // @TODO: Once we support react@16.3.0 we can replace
+  // the array with a Map to store [deriveHelper, indexId].
+  // It would be even easier to retrieve which content match
+  // which indexId.
   let derivedHelpers = [];
 
   let initialSearchParameters = helper.state;
