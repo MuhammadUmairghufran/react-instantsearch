@@ -1,4 +1,4 @@
-import { omit, isEmpty, find } from 'lodash';
+import { omit, find } from 'lodash';
 import algoliasearchHelper, { SearchParameters } from 'algoliasearch-helper';
 import createWidgetsManager from './createWidgetsManager';
 import createStore from './createStore';
@@ -32,8 +32,7 @@ export default function createInstantSearchManager({
   helper.on('error', handleSearchError);
   helper.on('search', handleNewSearch);
 
-  let derivedHelpers = {};
-  let indexMapping = {}; // keep track of the original index where the parameters applied when sortBy is used.
+  let derivedHelpers = [];
 
   let initialSearchParameters = helper.state;
 
@@ -73,7 +72,6 @@ export default function createInstantSearchManager({
   }
 
   function getSearchParameters() {
-    indexMapping = {};
     const sharedParameters = widgetsManager
       .getWidgets()
       .filter(widget => Boolean(widget.getSearchParameters))
@@ -86,7 +84,6 @@ export default function createInstantSearchManager({
         (res, widget) => widget.getSearchParameters(res),
         initialSearchParameters
       );
-    indexMapping[sharedParameters.index] = indexName;
 
     const derivatedWidgets = widgetsManager
       .getWidgets()
@@ -124,8 +121,6 @@ export default function createInstantSearchManager({
         sharedParameters
       );
 
-    indexMapping[mainIndexParameters.index] = indexName;
-
     return { sharedParameters, mainIndexParameters, derivatedWidgets };
   }
 
@@ -136,24 +131,28 @@ export default function createInstantSearchManager({
         mainIndexParameters,
         derivatedWidgets,
       } = getSearchParameters(helper.state);
-      Object.keys(derivedHelpers).forEach(key => derivedHelpers[key].detach());
-      derivedHelpers = {};
+
+      derivedHelpers.forEach(({ derivedHelper }) => derivedHelper.detach());
+      derivedHelpers = [];
 
       helper.setState(sharedParameters);
 
       derivatedWidgets.forEach(derivatedSearchParameters => {
         const index = derivatedSearchParameters.targetedIndex;
-        const derivedHelper = helper.derive(() => {
-          const parameters = derivatedSearchParameters.widgets.reduce(
+        const derivedHelper = helper.derive(() =>
+          derivatedSearchParameters.widgets.reduce(
             (res, widget) => widget.getSearchParameters(res),
             sharedParameters
-          );
-          indexMapping[parameters.index] = index;
-          return parameters;
-        });
+          )
+        );
+
         derivedHelper.on('result', handleSearchSuccess);
         derivedHelper.on('error', handleSearchError);
-        derivedHelpers[index] = derivedHelper;
+
+        derivedHelpers.push({
+          indexId: index,
+          derivedHelper,
+        });
       });
 
       helper.setState(mainIndexParameters);
@@ -164,14 +163,21 @@ export default function createInstantSearchManager({
 
   function handleSearchSuccess(content) {
     const state = store.getState();
+    const isDerivedHelpersEmpty = !derivedHelpers.length;
+
     let results = state.results ? state.results : {};
 
     /* if switching from mono index to multi index and vice versa,
     results needs to reset to {}*/
-    results = !isEmpty(derivedHelpers) && results.getFacetByName ? {} : results;
+    results = !isDerivedHelpersEmpty && results.getFacetByName ? {} : results;
 
-    if (!isEmpty(derivedHelpers)) {
-      results[indexMapping[content.index]] = content;
+    if (!isDerivedHelpersEmpty) {
+      const { indexId = indexName } =
+        derivedHelpers.find(
+          ({ derivedHelper }) => derivedHelper.lastResults === content
+        ) || {};
+
+      results[indexId] = content;
     } else {
       results = content;
     }
